@@ -1,0 +1,36 @@
+## Interface: 16001
+## Title: ItemRack (Forever)
+## Notes: Equipment sets, quick-swap buttons, auto queues and events, for WoW Forever
+## Notes-frFR: Ensembles d'équipement, boutons d'échange rapide, files automatiques et événements, pour WoW Forever
+## Author: Daeler (based on ItemRack by Gello, Rottenbeer and contributors)
+## Version: 1.0.2
+## IconTexture: Interface\AddOns\ItemRack_Forever\Media\icon
+## X-Category: Inventory
+## Category: Daeler Addons
+## OptionalDeps: Baganator
+## SavedVariables:ItemRackSettings, ItemRackItems, ItemRackEvents
+## SavedVariablesPerCharacter: ItemRackUser
+
+# Libraries
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+# Localization
+Locales\Locales.lua
+Locales\frFR.lua
+
+# Core
+UI\Skin.lua
+Core\Core.lua
+Core\Equip.lua
+Core\Queue.lua
+Core\Events.lua
+Core\Baganator.lua
+
+# Interface
+UI\Buttons.lua
+UI\Menu.lua
+UI\Minimap.lua
+UI\Options.lua
