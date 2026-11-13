@@ -212,9 +212,10 @@ function ItemRack.InitButtons()
   ItemRack.CreateTimer("ReflectClickedUpdate", ItemRack.ReflectClickedUpdate, .2, 1)
 
   local events = ItemRackFrame
-  for _, e in ipairs({ "UNIT_INVENTORY_CHANGED", "ACTIONBAR_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN", "ITEM_LOCK_CHANGED", "UPDATE_BINDINGS", "PLAYER_EQUIPMENT_CHANGED" }) do
+  for _, e in ipairs({ "ACTIONBAR_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN", "ITEM_LOCK_CHANGED", "UPDATE_BINDINGS", "PLAYER_EQUIPMENT_CHANGED" }) do
     pcall(events.RegisterEvent, events, e)
   end
+  ItemRack.RegisterPlayerEvent(events, "UNIT_INVENTORY_CHANGED")
   ItemRack.InitMenu()
   ItemRack.ReflectMainScale()
   ItemRack.ReflectMenuOnRight()

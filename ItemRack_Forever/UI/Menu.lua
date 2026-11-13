@@ -187,15 +187,18 @@ end
 
 local function addBag(id, bag)
   for j = 1, GetContainerNumSlots(bag) do
-    local itemID = ItemRack.GetID(bag, j)
-    if itemID ~= 0 then
-      local _, _, equipSlot = ItemRack.GetInfoByID(itemID)
-      if equipSlot and ItemRack.SlotInfo[id][equipSlot] and ItemRack.PlayerCanWear(id, bag, j)
-        and (ItemRackSettings.HideTradables == "OFF" or ItemRack.IsSoulbound(bag, j))
-        and (id ~= 0 or not ItemRack.AlreadyInMenu(itemID)) then
-        ItemRack.AddToMenu(itemID)
+    -- one unreadable item (secret value in combat) must not empty the whole menu
+    pcall(function()
+      local itemID = ItemRack.GetID(bag, j)
+      if itemID ~= 0 then
+        local _, _, equipSlot = ItemRack.GetInfoByID(itemID)
+        if equipSlot and ItemRack.SlotInfo[id][equipSlot] and ItemRack.PlayerCanWear(id, bag, j)
+          and (ItemRackSettings.HideTradables == "OFF" or ItemRack.IsSoulbound(bag, j))
+          and (id ~= 0 or not ItemRack.AlreadyInMenu(itemID)) then
+          ItemRack.AddToMenu(itemID)
+        end
       end
-    end
+    end)
   end
 end
 

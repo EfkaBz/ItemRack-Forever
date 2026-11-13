@@ -146,11 +146,12 @@ function ItemRack.RegisterEvents()
   local function reg(e)
     if not processing:IsEventRegistered(e) then pcall(processing.RegisterEvent, processing, e) end
   end
+  local playerAura, watchMount
   for name in pairs(ItemRackUser.Events.Enabled) do
     local ev = ItemRackEvents[name]
     local kind = ev and ev.Type
     if kind == "Buff" then
-      reg("UNIT_AURA")
+      if ev.Anymount then watchMount = true else playerAura = true end
     elseif kind == "Stance" then
       reg("UPDATE_SHAPESHIFT_FORM")
     elseif kind == "Zone" then
@@ -161,7 +162,12 @@ function ItemRack.RegisterEvents()
       reg(ev.Trigger) -- (pcall: a bad event name must not stop the others)
     end
   end
-  if ItemRack.TimerPool.CheckForMountedEvents then ItemRack.StartTimer("CheckForMountedEvents") end
+  -- buff events only need the player's auras (a script on UNIT_AURA keeps every unit)
+  if playerAura and not processing:IsEventRegistered("UNIT_AURA") then
+    ItemRack.RegisterPlayerEvent(processing, "UNIT_AURA")
+  end
+  -- mounting is polled: only while a mount event is on
+  if watchMount and ItemRack.TimerPool.CheckForMountedEvents then ItemRack.StartTimer("CheckForMountedEvents") end
 
   -- at login zone text and forms aren't known yet: OnEnterWorld runs this sweep
   if ItemRack.EnteredWorld then
@@ -222,8 +228,8 @@ function ItemRack.ProcessingFrameOnEvent(self, event, ...)
     end
   end
   if startStance then ItemRack.ProcessStanceEvent() end
-  if startBuff then ItemRack.StartTimer("EventsBuffTimer") end
-  if startZone then ItemRack.StartTimer("EventsZoneTimer") end
+  if startBuff then ItemRack.QueueTimer("EventsBuffTimer") end
+  if startZone then ItemRack.QueueTimer("EventsZoneTimer") end
 end
 processing:SetScript("OnEvent", ItemRack.ProcessingFrameOnEvent)
 

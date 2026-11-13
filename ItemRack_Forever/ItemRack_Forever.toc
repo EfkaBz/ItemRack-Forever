@@ -3,7 +3,7 @@
 ## Notes: Equipment sets, quick-swap buttons, auto queues and events, for WoW Forever
 ## Notes-frFR: Ensembles d'équipement, boutons d'échange rapide, files automatiques et événements, pour WoW Forever
 ## Author: Daeler (based on ItemRack by Gello, Rottenbeer and contributors)
-## Version: 1.0.2
+## Version: 1.0.3
 ## IconTexture: Interface\AddOns\ItemRack_Forever\Media\icon
 ## X-Category: Inventory
 ## Category: Daeler Addons

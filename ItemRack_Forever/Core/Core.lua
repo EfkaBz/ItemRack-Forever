@@ -295,7 +295,12 @@ function ItemRack.CreateTimer(name, func, delay, rep)
   ItemRack.TimerPool[name] = { func = func, delay = delay, rep = rep, elapsed = delay }
 end
 
+-- ItemRack.Timers: the running timers' names, in start order. timerActive mirrors it as a
+-- set so the per-frame checks don't scan the list.
+local timerActive = {}
+
 function ItemRack.IsTimerActive(name)
+  if not timerActive[name] then return end
   for i, j in ipairs(ItemRack.Timers) do
     if j == name then return i end
   end
@@ -305,27 +310,42 @@ function ItemRack.StartTimer(name, delay)
   local t = ItemRack.TimerPool[name]
   if not t then return end
   t.elapsed = delay or t.delay
-  if not ItemRack.IsTimerActive(name) then
+  if not timerActive[name] then
+    timerActive[name] = true
     table.insert(ItemRack.Timers, name)
     timerFrame:Show()
   end
 end
 
+-- starts the timer unless it already runs: events that come in bursts are handled once
+-- per delay instead of pushing the timer back each time
+function ItemRack.QueueTimer(name)
+  if not timerActive[name] then ItemRack.StartTimer(name) end
+end
+
 function ItemRack.StopTimer(name)
-  local idx = ItemRack.IsTimerActive(name)
-  if idx then
-    table.remove(ItemRack.Timers, idx)
-    if #ItemRack.Timers < 1 then timerFrame:Hide() end
+  if not timerActive[name] then return end
+  timerActive[name] = nil
+  local timers = ItemRack.Timers
+  for i = 1, #timers do
+    if timers[i] == name then
+      table.remove(timers, i)
+      break
+    end
   end
+  if #timers < 1 then timerFrame:Hide() end
 end
 
 local firing = {}
 function ItemRack.OnUpdate(self, elapsed)
-  wipe(firing)
-  for i, name in ipairs(ItemRack.Timers) do firing[i] = name end
-  for _, name in ipairs(firing) do
-    local t = ItemRack.TimerPool[name]
-    if t and ItemRack.IsTimerActive(name) then
+  local timers, pool = ItemRack.Timers, ItemRack.TimerPool
+  local n = #timers
+  for i = 1, n do firing[i] = timers[i] end
+  for i = 1, n do
+    local name = firing[i]
+    firing[i] = nil
+    local t = pool[name]
+    if t and timerActive[name] then
       t.elapsed = t.elapsed - elapsed
       if t.elapsed < 0 then
         if t.rep then t.elapsed = t.delay else ItemRack.StopTimer(name) end
@@ -346,6 +366,12 @@ function ItemRack.TimerDebug()
 end
 
 -- Client events ------------------------------------------------------------------
+-- a unit event for the player only, where the client can filter it; plain otherwise
+function ItemRack.RegisterPlayerEvent(frame, event)
+  if frame.RegisterUnitEvent and pcall(frame.RegisterUnitEvent, frame, event, "player") then return end
+  pcall(frame.RegisterEvent, frame, event)
+end
+
 function ItemRack.OnEvent(self, event, ...)
   local handler = ItemRack.EventHandlers[event]
   if handler then handler(self, event, ...) end
@@ -372,10 +398,14 @@ end
 function ItemRack.InitEventHandlers()
   local h = ItemRack.EventHandlers
   h.ITEM_LOCK_CHANGED = ItemRack.OnItemLockChanged
-  h.ACTIONBAR_UPDATE_COOLDOWN = function() ItemRack.UpdateButtonCooldowns() end
-  h.BAG_UPDATE_COOLDOWN = function() ItemRack.UpdateButtonCooldowns() end
-  h.UNIT_INVENTORY_CHANGED = ItemRack.OnUnitInventoryChanged
-  h.PLAYER_EQUIPMENT_CHANGED = function() ItemRack.OnUnitInventoryChanged(nil, nil, "player") end
+  -- these come in bursts (every global cooldown, every slot of a set swap): handled once
+  -- per short delay
+  h.ACTIONBAR_UPDATE_COOLDOWN = function() ItemRack.QueueTimer("ButtonCooldowns") end
+  h.BAG_UPDATE_COOLDOWN = function() ItemRack.QueueTimer("ButtonCooldowns") end
+  h.UNIT_INVENTORY_CHANGED = function(_, _, unit)
+    if unit == "player" then ItemRack.QueueTimer("InventoryChanged") end
+  end
+  h.PLAYER_EQUIPMENT_CHANGED = function() ItemRack.QueueTimer("InventoryChanged") end
   h.UPDATE_BINDINGS = function() ItemRack.KeyBindingsChanged() end
   h.PLAYER_REGEN_ENABLED = ItemRack.OnLeavingCombatOrDeath
   h.PLAYER_UNGHOST = ItemRack.OnLeavingCombatOrDeath
@@ -390,7 +420,12 @@ function ItemRack.InitEventHandlers()
   h.UNIT_SPELLCAST_SUCCEEDED = ItemRack.OnCastingStop
   h.UNIT_SPELLCAST_INTERRUPTED = ItemRack.OnCastingStop
   h.UNIT_SPELLCAST_FAILED = ItemRack.OnCastingStop
-  h.CHARACTER_POINTS_CHANGED = ItemRack.UpdateClassSpecificStuff
+  h.CHARACTER_POINTS_CHANGED = function(...)
+    ItemRack.ForgetItemScans()
+    ItemRack.UpdateClassSpecificStuff(...)
+  end
+  h.PLAYER_LEVEL_UP = function() ItemRack.ForgetItemScans() end
+  h.SKILL_LINES_CHANGED = function() ItemRack.ForgetItemScans() end
   h.PLAYER_TALENT_UPDATE = ItemRack.UpdateClassSpecificStuff
   h.ACTIVE_TALENT_GROUP_CHANGED = ItemRack.UpdateClassSpecificStuff
   h.PLAYER_ENTERING_WORLD = ItemRack.OnEnterWorld
@@ -729,6 +764,11 @@ function ItemRack.InitCore()
   ItemRack.CreateTimer("CooldownUpdate", ItemRack.CooldownUpdate, 1, 1)
   ItemRack.CreateTimer("LocksChanged", ItemRack.LocksChanged, .2)
   ItemRack.CreateTimer("DelayedCombatQueue", ItemRack.DelayedCombatQueue, .1)
+  ItemRack.CreateTimer("ButtonCooldowns", function() ItemRack.UpdateButtonCooldowns() end, .1)
+  ItemRack.CreateTimer("InventoryChanged", function()
+    ItemRack.ForgetItemScans(true) -- equipping binds an item
+    ItemRack.OnUnitInventoryChanged(nil, nil, "player")
+  end, .05)
 
   for i = -2, 11 do ItemRack.LockList[i] = {} end
   for bag in pairs(ItemRack.BankTabs) do ItemRack.LockList[bag] = ItemRack.LockList[bag] or {} end
@@ -751,10 +791,14 @@ function ItemRack.InitCore()
 
   for _, e in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_UNGHOST", "PLAYER_ALIVE",
     "BANKFRAME_CLOSED", "BANKFRAME_OPENED", "CHARACTER_POINTS_CHANGED", "PLAYER_LOGOUT",
-    "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED",
-    "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP",
-    "PLAYER_ENTERING_WORLD" }) do
+    "PLAYER_ENTERING_WORLD", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED" }) do
     pcall(timerFrame.RegisterEvent, timerFrame, e)
+  end
+  -- casts: only the player's (in a group the others' casts would wake us all the time)
+  for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_SUCCEEDED",
+    "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_CHANNEL_START",
+    "UNIT_SPELLCAST_CHANNEL_STOP" }) do
+    ItemRack.RegisterPlayerEvent(timerFrame, e)
   end
   for _, e in ipairs({ "PLAYER_TALENT_UPDATE", "ACTIVE_TALENT_GROUP_CHANGED" }) do
     pcall(timerFrame.RegisterEvent, timerFrame, e)
@@ -1024,16 +1068,61 @@ function ItemRack.IsRed(which)
   if r > .9 and g < .2 and b < .2 then return 1 end
 end
 
-function ItemRack.PlayerCanWear(invslot, bag, slot)
+-- What the tooltip said about an item, kept from out of combat: on Forever the scan
+-- tooltip's text and colours turn secret in combat and can't be compared.
+-- canWear[id] / soulbound[id] = true or false
+local wearCache, boundCache = {}, {}
+
+local function scanCanWear(bag, slot)
   scanBagItem(bag, slot)
   for i = 2, scanTip:NumLines() do
     local txt = _G["ItemRackTooltipTextLeft" .. i]:GetText() or ""
     -- red text that isn't durability or a profession requirement: can't be worn
     if (ItemRack.IsRed("Left" .. i) or ItemRack.IsRed("Right" .. i)) and not string.find(txt, ItemRack.DURABILITY_PATTERN)
       and not string.match(txt, ItemRack.REQUIRES_PATTERN) then
-      return nil
+      return false
     end
   end
+  return true
+end
+
+local function scanSoulbound(bag, slot)
+  scanBagItem(bag, slot)
+  for i = 2, 5 do
+    local fs = _G["ItemRackTooltipTextLeft" .. i]
+    local text = fs and fs:GetText()
+    if text == ITEM_SOULBOUND or text == ITEM_BIND_QUEST or text == ITEM_CONJURED then
+      return true
+    end
+  end
+  return false
+end
+
+-- forget the answers (level, skills or binding changed); kept in combat, where they
+-- can't be read again
+function ItemRack.ForgetItemScans(boundOnly)
+  if ItemRack.InCombat() then return end
+  if not boundOnly then wipe(wearCache) end
+  wipe(boundCache)
+  ItemRack.PopulateKnownItems() -- learns them again
+end
+
+-- the cached answer, else the scan's, else ifUnknown (unreadable and never seen)
+local function cachedScan(cache, scan, bag, slot, ifUnknown)
+  local id = ItemRack.GetID(bag, slot)
+  if id ~= 0 and cache[id] ~= nil then return cache[id] end
+  local ok, result = pcall(scan, bag, slot)
+  if ok then
+    if id ~= 0 then cache[id] = result end
+    return result
+  end
+  local known = cache[id]
+  if known == nil then return ifUnknown end
+  return known
+end
+
+function ItemRack.PlayerCanWear(invslot, bag, slot)
+  if not cachedScan(wearCache, scanCanWear, bag, slot, true) then return nil end
   local _, _, itemType = ItemRack.GetInfoByID(ItemRack.GetID(bag, slot))
   if itemType == "INVTYPE_WEAPON" and invslot == 17 and not ItemRack.CanWearOneHandOffHand then
     return nil
@@ -1042,14 +1131,7 @@ function ItemRack.PlayerCanWear(invslot, bag, slot)
 end
 
 function ItemRack.IsSoulbound(bag, slot)
-  scanBagItem(bag, slot)
-  for i = 2, 5 do
-    local fs = _G["ItemRackTooltipTextLeft" .. i]
-    local text = fs and fs:GetText()
-    if text == ITEM_SOULBOUND or text == ITEM_BIND_QUEST or text == ITEM_CONJURED then
-      return 1
-    end
-  end
+  return cachedScan(boundCache, scanSoulbound, bag, slot, true) and 1 or nil
 end
 
 -- .2 seconds after the last ITEM_LOCK_CHANGED
@@ -1078,6 +1160,11 @@ function ItemRack.PopulateKnownItems()
       local id = getid(i, j)
       if id ~= 0 and IsEquippableItem(ItemRack.GetIRString(id, true)) then
         known[id] = i * 100 + j
+        -- learn its tooltip now, so the menu can still filter it in combat
+        if (wearCache[id] == nil or boundCache[id] == nil) and not ItemRack.InCombat() then
+          pcall(ItemRack.PlayerCanWear, 1, i, j)
+          pcall(ItemRack.IsSoulbound, i, j)
+        end
       end
     end
   end
