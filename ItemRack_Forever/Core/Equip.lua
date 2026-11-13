@@ -66,8 +66,15 @@ function ItemRack.EquipSet(setname)
   end
   local set = ItemRackUser.Sets[setname]
 
-  if tonumber(set.spec) and tonumber(set.spec) > 0 then
-    ItemRack.ChangeSpecForSet(set.spec, setname)
+  -- the spec change is a cast that blocks the gear moves: the gear goes on first, the spec
+  -- changes once the swap is over (EndSetSwap)
+  local wantSpec = tonumber(set.spec)
+  if wantSpec and wantSpec > 0 and not isInternal(setname) then
+    if ItemRack.InCombat() then
+      ItemRack.ChangeSpecForSet(wantSpec, setname) -- (only says it can't)
+    else
+      ItemRack.PendingSpec = { spec = wantSpec, set = setname }
+    end
   end
 
   local swap = ItemRack.SwapList
@@ -234,6 +241,14 @@ function ItemRack.IterateSwapList(setname)
   end
 end
 
+-- the spec EquipSet put off, now that the set's gear is on (or as on as it gets)
+local function applyPendingSpec(setname)
+  local pending = ItemRack.PendingSpec
+  if not pending or pending.set ~= setname then return end
+  ItemRack.PendingSpec = nil
+  C_Timer.After(0.3, function() ItemRack.ChangeSpecForSet(pending.spec, setname) end)
+end
+
 local function findEquippedSet()
   for name in pairs(ItemRackUser.Sets) do
     if not isInternal(name) and ItemRack.IsSetEquipped(name) then return name end
@@ -260,6 +275,7 @@ function ItemRack.EndSetSwap(setname)
               ItemRackUser.CurrentSet = setname
               ItemRack.UpdateCurrentSet(setname)
               ItemRack.OptOnSetSwapped()
+              applyPendingSpec(setname)
             end
           end)
           return
@@ -267,6 +283,7 @@ function ItemRack.EndSetSwap(setname)
       end
       ItemRack.SetSwapRetryCount = 0
       ItemRack.SetSwapRetrying = nil
+      applyPendingSpec(setname)
     end
 
     if not isInternal(setname) then

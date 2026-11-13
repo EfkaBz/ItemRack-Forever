@@ -427,7 +427,10 @@ function ItemRack.InitEventHandlers()
   h.PLAYER_LEVEL_UP = function() ItemRack.ForgetItemScans() end
   h.SKILL_LINES_CHANGED = function() ItemRack.ForgetItemScans() end
   h.PLAYER_TALENT_UPDATE = ItemRack.UpdateClassSpecificStuff
-  h.ACTIVE_TALENT_GROUP_CHANGED = ItemRack.UpdateClassSpecificStuff
+  h.ACTIVE_TALENT_GROUP_CHANGED = function(...)
+    ItemRack.SpecChanging = nil
+    ItemRack.UpdateClassSpecificStuff(...)
+  end
   h.PLAYER_ENTERING_WORLD = ItemRack.OnEnterWorld
   h.PLAYER_LOGOUT = ItemRack.OnPlayerLogout
 end
@@ -691,8 +694,10 @@ function ItemRack.ChangeSpecForSet(targetSpec, setname)
   if not targetSpec or targetSpec <= 0 then return end
   local current = ItemRack.GetActiveSpec()
   if current and tonumber(current) == targetSpec then return end
+  -- already switching (the activation is a cast): asking again would restart it
+  if ItemRack.SpecChanging and GetTime() - ItemRack.SpecChanging < 10 then return end
   ItemRack.Print(L["Switching to spec %d for set \"%s\""]:format(targetSpec, tostring(setname)))
-  ItemRack.SetActiveSpec(targetSpec)
+  if ItemRack.SetActiveSpec(targetSpec) then ItemRack.SpecChanging = GetTime() end
 end
 
 -- Sets in item tooltips ------------------------------------------------------------
