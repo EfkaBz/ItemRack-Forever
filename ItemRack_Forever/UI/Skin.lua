@@ -734,6 +734,7 @@ end
 
 -- Confirm dialog (the game's popup) ---------------------------------------------------
 -- S.Confirm(text, { {label, fn}, ... }); Escape = the last button
+-- a button with reload = true reloads the interface after its fn (secure /reload)
 local dialog
 function S.Confirm(text, buttons)
   if not dialog then
@@ -749,9 +750,9 @@ function S.Confirm(text, buttons)
     dialog.text:SetWidth(290)
     dialog.buttons = {}
     tinsert(UISpecialFrames, "ItemRackForeverConfirm")
-    dialog:SetScript("OnHide", function(self) -- a button, or Escape (= the last button)
-      local fn = self.pending or self.cancel
-      self.pending, self.cancel = nil, nil
+    dialog:SetScript("OnHide", function(self) -- Escape (= the last button)
+      local fn = self.cancel
+      self.cancel = nil
       if fn then fn() end
     end)
   end
@@ -761,16 +762,45 @@ function S.Confirm(text, buttons)
   dialog:SetWidth(math.max(320, n * (bw + 12) + 30))
   dialog:SetHeight(dialog.text:GetStringHeight() + 62)
   for _, b in ipairs(dialog.buttons) do b:Hide() end
+  if dialog.reload and not InCombatLockdown() then dialog.reload:Hide() end
   for i, def in ipairs(buttons) do
-    local b = dialog.buttons[i]
-    if not b then
-      b = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
-      b:SetScript("OnClick", function(self)
-        PlaySound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION or 857)
-        dialog.pending = self.fn
-        dialog:Hide()
-      end)
-      dialog.buttons[i] = b
+    local b
+    if def.reload and not InCombatLockdown() then
+      -- ReloadUI() is protected for addons: a secure macro button runs /reload,
+      -- the button's own function (e.g. wiping the settings) runs just before
+      b = dialog.reload
+      if not b then
+        b = CreateFrame("Button", "ItemRackForeverConfirmReload", UIParent,
+          "SecureActionButtonTemplate, UIPanelButtonTemplate")
+        b:SetFrameStrata("DIALOG")
+        b:RegisterForClicks("AnyUp", "AnyDown")
+        b:SetAttribute("type", "macro")
+        b:SetAttribute("macrotext", "/reload")
+        b:SetScript("PreClick", function(self, _, down)
+          -- the macro fires on key down or key up depending on this CVar
+          if (down and true or false) ~= (GetCVarBool("ActionButtonUseKeyDown") and true or false) then return end
+          PlaySound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION or 857)
+          dialog.cancel = nil
+          if self.fn then self.fn() end
+        end)
+        b:RegisterEvent("PLAYER_REGEN_DISABLED") -- a protected frame can't hide in combat
+        b:SetScript("OnEvent", function(self) self:Hide() end)
+        dialog:HookScript("OnHide", function() if not InCombatLockdown() then b:Hide() end end)
+        dialog.reload = b
+      end
+      b:SetFrameLevel(dialog:GetFrameLevel() + 5)
+    else
+      b = dialog.buttons[i]
+      if not b then
+        b = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+        b:SetScript("OnClick", function(self)
+          PlaySound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION or 857)
+          dialog.cancel = nil
+          dialog:Hide()
+          self.fn()
+        end)
+        dialog.buttons[i] = b
+      end
     end
     b:SetSize(bw, 21)
     b:SetText(def[1])
@@ -780,7 +810,6 @@ function S.Confirm(text, buttons)
     b:Show()
   end
   dialog.cancel = buttons[n][2] or function() end
-  dialog.pending = nil
   dialog:Show()
   PlaySound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPEN or 850)
 end

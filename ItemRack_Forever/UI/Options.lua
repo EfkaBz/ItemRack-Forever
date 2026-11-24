@@ -525,6 +525,7 @@ function Opt.ListScrollFrameUpdate()
     row.checkText:Hide()
     row.check:Hide()
     row.numberLabel:Hide()
+    row.numberLabel:SetWidth(0)
     row.underline:Hide()
     local opt = Opt.OptInfo[offset + i]
     if opt then
@@ -561,7 +562,15 @@ function Opt.ListScrollFrameUpdate()
           row.numberLabel:SetText(opt.label)
           row.numberLabel:SetTextColor(S.Color(off and C.dim or C.text))
           row.numberLabel:Show()
-          b:SetPoint("LEFT", row.numberLabel, "RIGHT", 16, -1)
+          -- keep the box inside the row with long (translated) labels
+          local room = row:GetWidth() - 24 - b:GetWidth() - 6
+          row.numberLabel:SetWidth(0)
+          local w = row.numberLabel:GetStringWidth()
+          if w + 6 > room then
+            row.numberLabel:SetWidth(room - 6)
+            w = room - 6
+          end
+          b:SetPoint("LEFT", row.numberLabel, "LEFT", w + math.min(16, room - w), -1)
         elseif opt.type == "slider" then
           b:SetPoint("LEFT", row, "LEFT", 32, 4)
         else
@@ -1810,7 +1819,7 @@ local function buildConfig()
       if v == ItemRackSettings.Language then return end
       ItemRackSettings.Language = v
       S.Confirm(L["The language changes once the interface is reloaded.\nReload now?"], {
-        { L["Reload"], ReloadUI },
+        { L["Reload"], nil, reload = true },
         { L["Later"] },
       })
     end)

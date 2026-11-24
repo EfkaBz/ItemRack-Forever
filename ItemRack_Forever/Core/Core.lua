@@ -1613,8 +1613,7 @@ function ItemRack.ResetEverything()
   ns.Skin.Confirm(L["This will restore ItemRack to its default state, wiping all sets, buttons, events and settings.\nThe interface will be reloaded. Continue?"], {
     { L["Reset"], function()
       ItemRackUser, ItemRackSettings, ItemRackItems, ItemRackEvents = nil, nil, nil, nil
-      ReloadUI()
-    end },
+    end, reload = true },
     { L["Cancel"] },
   })
 end
